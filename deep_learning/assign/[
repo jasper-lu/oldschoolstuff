@@ -1,0 +1,238 @@
+import numpy as np
+import time
+import pdb
+import matplotlib.pyplot as plt 
+from relu_net import NeuralNet
+from mnist import MNIST
+
+toBinary = np.vectorize(lambda x: 1 if x >= 0.5 else 0)
+
+def normalize_images(images):
+    arr = []
+    for x in range(len(images)):
+        arr.append(np.array(images[x]).T.dot(1.0/255))
+    return np.array(arr).T
+
+def normalize_labels(labels):
+    newLabels = []
+    for label in labels:
+        if label == 5:
+            newLabels.append([1])
+        else:
+            newLabels.append([0])
+    return np.array(newLabels).T
+
+def test_alphas(images, labels, iters, tImages = [], tLabels = []):
+    network = NeuralNet()
+    network.add_layer(NeuronLayer("relu", 9, 784))
+    network.add_layer(NeuronLayer("sigmoid", 1, 9))
+    alphas = [.1, .5, 1, 5, 10]
+    alphaPlots = []
+    for alpha in alphas:
+        network.reset()
+        print("Testing alpha =", alpha)
+        #costs = [network.cost(images, labels)]
+        costs = [network.cost(images, labels)]
+        for x in range(iters):
+            network.backpropagate(images, labels, alpha)
+            costs.append(network.cost(images, labels))
+            #print("Iteration", x+1, "of", iters, "| Cost is", costs[-1])
+        alphaPlot, = plt.plot(costs, label="alpha=" + str(alpha))
+        alphaPlots.append(alphaPlot)
+        test_correct(network, tImages, tLabels, True)
+
+        print(costs)
+
+    plt.legend(alphaPlots, list(map(lambda x: "alpha=" + str(x), alphas)))
+    plt.xlabel("iteration number")
+    plt.ylabel("cost")
+    plt.savefig("nn_cost_alpha_comparison.jpg")
+    plt.close()
+
+def test_activations(images, labels, iters, alpha, tImages = [], tLabels = []):
+    network = NeuralNetwork()
+    networkB = NeuralNetwork()
+    networkB.add_layer(NeuronLayer("relu", 5, 784))
+    networkB.add_layer(NeuronLayer("sigmoid", 1, 5))
+    network.add_layer(NeuronLayer("tanh", 5, 784))
+    network.add_layer(NeuronLayer("sigmoid", 1, 5))
+
+    costs = [network.cost(images, labels)]
+    costsB = [networkB.cost(images, labels)]
+
+    start = time.time()
+    for x in range(iters):
+        network.backpropagate(images, labels, alpha)
+        costs.append(network.cost(images, labels))
+    print("Tanh took", time.time() - start, "to run")
+
+    start = time.time()
+    for x in range(iters):
+        networkB.backpropagate(images, labels, alpha / 3)
+        costsB.append(networkB.cost(images, labels))
+        #print("Iteration", x+1, "of", iters, "| Cost is", costs[-1])
+    print("Relu took", time.time() - start, "to run")
+
+    aPlot, = plt.plot(costs, label="Tanh")
+    bPlot, = plt.plot(costsB, label="Relu")
+
+    test_correct(network, tImages, tLabels, True)
+    test_correct(networkB, tImages, tLabels, True)
+
+    plt.legend([aPlot, bPlot], ["Tanh", "Relu"])
+    plt.xlabel("iteration number")
+    plt.ylabel("cost")
+    plt.savefig("nn_activation.jpg")
+    plt.close()
+
+def test_layers(images, labels, iters, alpha, tImages = [], tLabels = []):
+    networks = [NeuralNetwork() for x in range(3)]
+    for x in range(3):
+        networks[x].add_layer(NeuronLayer("relu", 9, 784))
+        for y in range(x):
+            networks[x].add_layer(NeuronLayer("relu", 9, 9))
+        networks[x].add_layer(NeuronLayer("relu", 1, 9))
+
+    costs = [[networks[x].cost(images, labels)] for x in range(3)]
+
+    for y in range(3):
+        start = time.time()
+        network = networks[y]
+        for x in range(iters):
+            network.backpropagate(images, labels, alpha)
+            costs[y].append(network.cost(images, labels))
+        print("Layer with", len(network.network) - 1, "layers took", time.time() - start, "to run")
+
+    layer_plots = [plt.plot(x)[0] for x in costs]
+
+    for x in range(3):
+        print("Network with", x + 1, "hidden layers")
+        test_correct(networks[x], tImages, tLabels, True)
+
+    plt.legend(layer_plots, ["1 hidden layer", "2 hidden layers", "3 hidden layers"])
+    plt.xlabel("iteration number")
+    plt.ylabel("cost")
+    plt.savefig("nn_layers.jpg")
+    plt.close()
+
+def test_correct(network, images, labels, _print=False, origLabels=None):
+    correct = 0.0
+    false_pos = 0
+    false_neg = 0
+    predictions = toBinary(network.predict(images))
+
+    for i in range(predictions.shape[1]):
+        if predictions[0][i] == labels[0][i]:
+            correct += 1
+        elif labels[0][i] == 0:
+            false_pos += 1
+        else:
+            false_neg += 1
+    if _print:
+        print("Test run on", len(images), "instances.")
+        print("Correct prediction on", correct, "instances.")
+        print("Correct rate is", correct / images.shape[1])
+        print("False negatives:", false_neg)
+        print("False positives:", false_pos)
+
+    return correct / len(images)
+
+def test_num_hidden_units(images, labels, tImages, tLabels, alpha, iters):
+    units = [5,7,9,10]
+    unitPlots = []
+
+    for unit in units:
+
+        costs = [0 for x in range(iters)]
+
+        network = NeuralNetwork()
+        avg_correct = 0.0
+        for y in range(10):
+            network = NeuralNetwork()
+            network.add_layer(NeuronLayer("tanh", unit, 784))
+            network.add_layer(NeuronLayer("sigmoid", 1, unit))
+            print("Unit", unit, "y", y)
+            for x in range(iters):
+                network.backpropagate(images, labels, alpha)
+                costs[x] += network.cost(images, labels)
+                #print("Iteration", x+1, "of", iters, "| Cost is", costs[-1])
+            correct = test_correct(network, tImages, tLabels, False)
+            avg_correct += correct
+
+        avg_correct *= .1
+
+        print(unit, "units", avg_correct, "correct")
+
+        costs = np.dot(.25, costs)
+        unitPlot, = plt.plot(costs, label=str(unit) + " hidden units")
+        unitPlots.append(unitPlot)
+        #print("With", unit, "hidden units, our test error is",
+            #test_correct(network, tImages, tLabels))
+
+    plt.legend(unitPlots, list(map(lambda x: str(x) + " hidden units", units)))
+    plt.xlabel("iteration number")
+    plt.ylabel("cost")
+    plt.savefig("nn_cost_units_comparison.jpg")
+    plt.close()
+
+def main():
+    net = NeuralNet(784)
+    net.add_layer("relu", 5)
+    net.add_layer("sigmoid", 1)
+    #network.add_layer(NeuronLayer("sigmoid", 1, 784))
+    alpha = .5
+    iters = 300
+
+    mndata = MNIST('./')
+    images, labels = mndata.load_training()
+    tImages, tLabels = mndata.load_testing()
+
+    images = images[:600]
+    labels = labels[:600]
+
+    oldLabels = labels
+
+    images = normalize_images(images)
+    labels = normalize_labels(labels)
+    tImages = normalize_images(tImages)
+    tLabels = normalize_labels(tLabels)
+
+    #test_alphas(images, labels, iters, tImages, tLabels)
+    #test_num_hidden_units(images, labels, tImages, tLabels, alpha, iters)
+    #test_activations(images, labels, iters, alpha, tImages, tLabels)
+    #test_layers(images, labels, iters, alpha, tImages, tLabels)
+
+    costs = net.train(images, labels, iters, alpha, verbose=True, errors=True)[0]
+        
+    #pdb.set_trace()
+    #trainPlot, = plt.plot(training_errors, label="Training data error rate")
+    #testPlot, = plt.plot(test_errors, label="Test data error rate")
+
+    test_correct(net, tImages, tLabels, True)
+    #plt.legend([trainPlot, testPlot], ["Training data error rate", "Test data error rate"])
+    """
+    plt.xlabel("iteration number")
+    plt.ylabel("cost")
+    plt.savefig("nn_errors_comparison.jpg")
+    plt.close()
+    """
+             
+    plt.plot(costs)
+    plt.xlabel("iteration number")
+    plt.ylabel("cost")
+    plt.savefig("neural_network_cost.jpg")
+    plt.close()
+    
+    """
+    pdb.set_trace()
+    test_correct(network, tImages, tLabels, True)
+    exampleIndices = [2, 1, 15, 9, 8, 7, 6, 18, 23]
+    for x in exampleIndices:
+        print(x, network.predict(tImages[x])[0], True)
+    """
+    
+    #test_num_hidden_units(images, labels, tImages, tLabels, alpha, iters)
+    #test_alphas(images, labels, iters)
+
+if __name__ == "__main__":
+    main()
